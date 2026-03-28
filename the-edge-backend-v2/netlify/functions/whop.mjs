@@ -8,70 +8,47 @@ export const handler = async (event) => {
 
   const apiKey    = event.headers['x-whop-key']
   const companyId = event.headers['x-company-id']
-  const action    = event.queryStringParameters?.action || 'members'
 
   if (!apiKey)    return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'x-whop-key header required' }) }
   if (!companyId) return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'x-company-id header required' }) }
 
-  try {
-    let url
+  const results = []
 
-    if (action === 'members' || action === 'validate') {
-      // Whop v5 API - list memberships for a company
-      url = `https://api.whop.com/api/v5/company/${companyId}/memberships?pagination[per]=100`
-    } else {
-      return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: `Unknown action: ${action}` }) }
-    }
+  const attempts = [
+    { label: 'v5-company-members',      url: `https://api.whop.com/api/v5/company/${companyId}/members` },
+    { label: 'v5-company-memberships',  url: `https://api.whop.com/api/v5/company/${companyId}/memberships` },
+    { label: 'v1-memberships',          url: `https://api.whop.com/api/v1/memberships?company_id=${companyId}` },
+    { label: 'v2-memberships',          url: `https://api.whop.com/api/v2/memberships?company_id=${companyId}` },
+    { label: 'v5-app-members',          url: `https://api.whop.com/api/v5/app/members?company_id=${companyId}` },
+  ]
 
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      },
-    })
-
-    const text = await res.text()
-    
-    // Log for debugging
-    console.log('Whop status:', res.status)
-    console.log('Whop response:', text.slice(0, 200))
-
-    if (!text || text.trim() === '') {
-      return {
-        statusCode: 500,
-        headers: CORS,
-        body: JSON.stringify({ error: 'Whop returned empty response — check API key permissions' })
-      }
-    }
-
-    let data
+  for (const { label, url } of attempts) {
     try {
-      data = JSON.parse(text)
-    } catch {
-      return {
-        statusCode: 500,
-        headers: CORS,
-        body: JSON.stringify({ error: `Whop returned non-JSON: ${text.slice(0, 100)}` })
+      const res = await fetch(url, {
+        headers: { 'Authorization': `Bearer ${apiKey}`, 'Accept': 'application/json' },
+      })
+      const text = await res.text()
+      results.push({ label, url, status: res.status, body: text.slice(0, 300) })
+
+      if (res.ok && text && text.trim()) {
+        try {
+          const data = JSON.parse(text)
+          const members = data.data || data.members || data.results || data || []
+          return {
+            statusCode: 200,
+            headers: { ...CORS, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ data: Array.isArray(members) ? members : [members], _endpoint: label }),
+          }
+        } catch {}
       }
+    } catch (err) {
+      results.push({ label, url, error: err.message })
     }
+  }
 
-    if (!res.ok) {
-      const msg = data?.message || data?.error || data?.detail || `Whop API error ${res.status}`
-      return { statusCode: res.status, headers: CORS, body: JSON.stringify({ error: msg }) }
-    }
-
-    return {
-      statusCode: 200,
-      headers: { ...CORS, 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    }
-  } catch (err) {
-    return {
-      statusCode: 500,
-      headers: CORS,
-      body: JSON.stringify({ error: `Proxy error: ${err.message}` })
-    }
+  return {
+    statusCode: 500,
+    headers: { ...CORS, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ error: 'All Whop endpoints failed', debug: results }),
   }
 }
