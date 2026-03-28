@@ -2,52 +2,42 @@ export const handler = async (event) => {
   const CORS = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-whop-key, x-company-id',
+    'Access-Control-Allow-Headers': 'Content-Type',
   }
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers: CORS, body: '' }
 
-  const apiKey    = event.queryStringParameters?.key || event.headers['x-whop-key']
-  const companyId = event.queryStringParameters?.company || event.headers['x-company-id'] || 'biz_sAX9PtBrPSoMbN'
+  const apiKey    = event.queryStringParameters?.key
+  const companyId = 'biz_sAX9PtBrPSoMbN'
 
   if (!apiKey) return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Pass ?key=YOUR_KEY' }) }
 
   const results: any = {}
 
-  const endpoints = [
-    // Plans/tiers
-    { k: 'v1_plans',          url: `https://api.whop.com/api/v1/plans?company_id=${companyId}` },
-    { k: 'v2_plans',          url: `https://api.whop.com/api/v2/plans?company_id=${companyId}` },
-    { k: 'v5_plans',          url: `https://api.whop.com/api/v5/company/${companyId}/plans` },
-    // Products
-    { k: 'v5_products',       url: `https://api.whop.com/api/v5/company/${companyId}/products` },
-    { k: 'v1_products',       url: `https://api.whop.com/api/v1/products?company_id=${companyId}` },
-    // Memberships per plan
-    { k: 'v1_memberships_active', url: `https://api.whop.com/api/v1/memberships?company_id=${companyId}&status=active&per=100&page=1` },
-    { k: 'v1_memberships_valid',  url: `https://api.whop.com/api/v1/memberships?company_id=${companyId}&valid=true&per=100` },
+  // Get all plans with member counts
+  const planEndpoints = [
+    { k: 'v1_plans',    url: `https://api.whop.com/api/v1/plans?company_id=${companyId}&per=50` },
+    { k: 'v2_plans',    url: `https://api.whop.com/api/v2/plans?company_id=${companyId}` },
+    { k: 'v1_products', url: `https://api.whop.com/api/v1/products?company_id=${companyId}` },
   ]
 
-  for (const { k, url } of endpoints) {
+  for (const { k, url } of planEndpoints) {
     try {
       const res = await fetch(url, {
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Accept': 'application/json' }
       })
       const data = await res.json()
-      const items = data.data || data.plans || data.products || data.memberships || []
-      
+      const items = data.data || data.plans || data.products || []
       results[k] = {
         http: res.status,
         count: Array.isArray(items) ? items.length : '?',
-        sample: Array.isArray(items) ? items.slice(0, 3).map((m: any) => ({
-          id: m.id,
-          name: m.name || m.title,
-          status: m.status,
-          valid: m.valid,
-          price: m.price_per_period || m.price || m.base_currency_price,
-          billing: m.billing_period,
-          visibility: m.visibility,
-          stock: m.stock,
-          members_count: m.members_count,
-          plan_type: m.plan_type,
+        items: Array.isArray(items) ? items.map((p: any) => ({
+          id: p.id,
+          name: p.name || p.title,
+          price: p.price_per_period || p.price || p.base_currency_price,
+          billing_period: p.billing_period || p.plan_type,
+          members_count: p.members_count || p.active_memberships_count,
+          stock: p.stock,
+          status: p.status || p.visibility,
         })) : data
       }
     } catch (err: any) {
