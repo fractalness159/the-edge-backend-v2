@@ -1,4 +1,3 @@
-// Debug endpoint — shows exactly what Whop returns for your account
 export const handler = async (event) => {
   const CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -7,50 +6,49 @@ export const handler = async (event) => {
   }
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers: CORS, body: '' }
 
-  const apiKey    = event.headers['x-whop-key']
-  const companyId = event.headers['x-company-id']
+  // Accept key via URL params OR headers
+  const apiKey    = event.queryStringParameters?.key || event.headers['x-whop-key']
+  const companyId = event.queryStringParameters?.company || event.headers['x-company-id'] || 'biz_sAX9PtBrPSoMbN'
 
-  if (!apiKey || !companyId) return { 
+  if (!apiKey) return { 
     statusCode: 400, headers: CORS, 
-    body: JSON.stringify({ error: 'x-whop-key and x-company-id required' }) 
+    body: JSON.stringify({ error: 'Pass ?key=YOUR_WHOP_KEY in the URL' }) 
   }
 
-  const results: any = {}
+  const results = {}
 
-  // Try every possible endpoint and show raw response
   const endpoints = [
-    { key: 'v5_members',           url: `https://api.whop.com/api/v5/company/${companyId}/members?pagination[per]=5` },
-    { key: 'v5_memberships',       url: `https://api.whop.com/api/v5/company/${companyId}/memberships?pagination[per]=5` },
-    { key: 'v5_memberships_active',url: `https://api.whop.com/api/v5/company/${companyId}/memberships?status=active&pagination[per]=5` },
-    { key: 'v1_active',            url: `https://api.whop.com/api/v1/memberships?company_id=${companyId}&status=active&per=5` },
+    { k: 'v5_memberships_active', url: `https://api.whop.com/api/v5/company/${companyId}/memberships?status=active&pagination[per]=10` },
+    { k: 'v5_memberships_all',    url: `https://api.whop.com/api/v5/company/${companyId}/memberships?pagination[per]=5` },
+    { k: 'v5_members',            url: `https://api.whop.com/api/v5/company/${companyId}/members?pagination[per]=5` },
+    { k: 'v1_active',             url: `https://api.whop.com/api/v1/memberships?company_id=${companyId}&status=active&per=10` },
   ]
 
-  for (const { key, url } of endpoints) {
+  for (const { k, url } of endpoints) {
     try {
       const res = await fetch(url, {
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Accept': 'application/json' }
       })
-      const text = await res.text()
-      let data: any = {}
-      try { data = JSON.parse(text) } catch { data = { raw: text.slice(0, 200) } }
-      
+      const data = await res.json()
       const items = data.data || data.members || data.results || []
-      results[key] = {
-        status: res.status,
-        total: items.length,
-        // Show status field for first 5 members
-        statuses: Array.isArray(items) ? items.slice(0,5).map((m: any) => ({
+      results[k] = {
+        http_status: res.status,
+        count: items.length,
+        members: Array.isArray(items) ? items.slice(0, 10).map(m => ({
           id: m.id,
-          status: m.status || m.membership_status || 'UNKNOWN',
-          email: m.user?.email || m.email || 'no email',
-          name: m.user?.name || m.user?.username || m.name || 'unknown',
-          price: m.plan?.price_per_period || m.plan?.price || m.renewal_price || 'no price',
-          plan: m.plan?.name || 'no plan name',
-        })) : [],
-        pagination: data.pagination || data.meta || null,
+          status: m.status,
+          membership_status: m.membership_status,
+          valid: m.valid,
+          email: m.user?.email || m.email,
+          name: m.user?.name || m.user?.username || m.name,
+          price: m.plan?.price_per_period || m.plan?.price || m.renewal_price,
+          plan_name: m.plan?.name,
+          expires_at: m.expires_at,
+          cancel_at_period_end: m.cancel_at_period_end,
+        })) : data
       }
-    } catch (err: any) {
-      results[key] = { error: err.message }
+    } catch (err) {
+      results[k] = { error: err.message }
     }
   }
 
