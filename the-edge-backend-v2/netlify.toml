@@ -1,12 +1,13 @@
 [build]
+  base = "the-edge-backend-v2"
   functions = "netlify/functions"
 
 [functions]
   node_bundler = "esbuild"
 
 [[headers]]
-  for = "/*"
+  for = "/.netlify/functions/*"
   [headers.values]
     Access-Control-Allow-Origin = "*"
-    Access-Control-Allow-Methods = "GET, POST, OPTIONS"
-    Access-Control-Allow-Headers = "Content-Type, Authorization, x-whop-key, x-company-id, x-kit-key, x-sd-key, x-twitter-token, x-ig-token, x-ig-account-id, x-code-verifier"
+    Access-Control-Allow-Methods = "GET, POST, OPTIONS, PUT, DELETE"
+    Access-Control-Allow-Headers = "Content-Type, Authorization, x-whop-key, x-company-id, x-kit-key, x-sd-key, x-twitter-token, x-ig-token, x-ig-account-id, x-plan-price, x-apollo-key, x-yt-key, x-discord-token, x-google-key, x-google-cx"
